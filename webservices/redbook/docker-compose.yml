@@ -25,7 +25,7 @@ services:
     depends_on: 
       - bookstack_db
   bookstack_db:
-    image: lscr.io/linuxserver/mariadb
+    image: mariadb:10.6
     container_name: bookstack_db
     restart: unless-stopped
     environment:
