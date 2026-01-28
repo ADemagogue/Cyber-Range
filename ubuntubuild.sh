@@ -581,7 +581,7 @@ case $opt in
      pip install gdown
      a2enmod ssl
      echo -e "$green Downloading websites now, this will take a bit, approx 1,1GB download. $default"
-     gdown 1__Z5LllzuOA_HnVA6YsC47toHsmEo99d
+     gdown 1Q0tctpMDnN8lrnq3A_276XGlbi5S-E0G
      echo -e "$green Download complete, extracting sites. $default"
      sleep 2
      tar -zxvf trafficsites.tar.gz -C /var/www/html
