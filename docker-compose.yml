@@ -1,0 +1,354 @@
+## Cyber-Range Master Docker Compose
+## All services merged into a single compose file.
+## Errata #1: Router uses network_mode: host (not macvlan)
+## Errata #14: Volume names use cr- prefix; no absolute /root/ paths
+
+volumes:
+  cr-owncloud-files:
+    driver: local
+  cr-owncloud-mysql:
+    driver: local
+  cr-owncloud-backup:
+    driver: local
+  cr-owncloud-redis:
+    driver: local
+  cr-bookstack-web:
+    driver: local
+  cr-bookstack-db:
+    driver: local
+  cr-hastebin-redis:
+    driver: local
+  cr-ssl-certs:
+    driver: local
+
+networks:
+  services:
+    driver: bridge
+
+services:
+
+  # ── Router ──────────────────────────────────────────────────
+  router:
+    build:
+      context: ./docker/router
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+    volumes:
+      - ./data/networks:/data/networks:ro
+    environment:
+      - ADMIN_DEV=${ADMIN_DEV:-eth0}
+      - SERVICES_DEV=${SERVICES_DEV:-eth1}
+      - GRAYSPACE_DEV=${GRAYSPACE_DEV:-eth2}
+      - WAN_DEV=${WAN_DEV:-eth3}
+
+  # ── DNS (BIND9 Root DNS) ────────────────────────────────────
+  rootdns:
+    image: ubuntu/bind9:latest
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+    volumes:
+      - ./rootdns/bind:/etc/bind:ro
+      - ./docker/dns/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["bash", "/entrypoint.sh"]
+    environment:
+      - BIND_IP=${ROOT_DNS_IP:-198.41.0.4}
+    depends_on:
+      router:
+        condition: service_started
+
+  # ── Certificate Authority ───────────────────────────────────
+  ca-server:
+    build:
+      context: .
+      dockerfile: docker/ca/Dockerfile
+    hostname: ca-server
+    restart: unless-stopped
+    networks:
+      services:
+    environment:
+      - CA_DOMAIN=${CA_DOMAIN:-globalcert.com}
+      - CA_COUNTRY=${CA_COUNTRY:-US}
+      - CA_STATE=${CA_STATE:-Oregon}
+      - CA_LOCALITY=${CA_LOCALITY:-Seattle}
+      - CA_ORG=${CA_ORG:-Global Certificate Authority}
+      - CA_PASS=${CA_PASS:-password}
+      - BACKDATE_DAYS=${BACKDATE_DAYS:-365}
+    volumes:
+      - cr-ssl-certs:/output
+    healthcheck:
+      test: ["CMD", "bash", "-c", "test -f /root/ca/certs/root.crt.pem && test -f /root/ca/intermediate/certs/int.$${CA_DOMAIN:-globalcert.com}.crt.pem"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # ── Certificate Bootstrap (generates web service certs) ─────
+  cert-bootstrap:
+    build:
+      context: .
+      dockerfile: docker/cert-bootstrap/Dockerfile
+    networks:
+      services:
+    environment:
+      - CA_DOMAIN=${CA_DOMAIN:-globalcert.com}
+      - CA_PASS=${CA_PASS:-password}
+      - OUTPUT_DIR=/output
+    volumes:
+      - cr-ssl-certs:/output
+    volumes_from:
+      - ca-server
+    depends_on:
+      ca-server:
+        condition: service_healthy
+    restart: "no"
+
+  # ── Owncloud (dropbox.com) ──────────────────────────────────
+  owncloud:
+    image: owncloud/server:10.11
+    restart: unless-stopped
+    networks:
+      services:
+    depends_on:
+      owncloud-db:
+        condition: service_started
+      owncloud-redis:
+        condition: service_started
+    environment:
+      - APACHE_DOCUMENT_ROOT=/var/www/owncloud
+      - APACHE_SERVER_NAME=dropbox.com
+      - OWNCLOUD_TRUSTED_DOMAINS=${OWNCLOUD_IP:-180.1.1.100},dropbox.com,www.dropbox.com
+      - OWNCLOUD_ADMIN_USERNAME=admin
+      - OWNCLOUD_ADMIN_PASSWORD=${MASTER_PASSWORD:-toor}
+      - OWNCLOUD_DOMAIN=dropbox.com
+      - OWNCLOUD_DB_TYPE=mysql
+      - OWNCLOUD_DB_NAME=owncloud
+      - OWNCLOUD_DB_USERNAME=owncloud
+      - OWNCLOUD_DB_PASSWORD=owncloud
+      - OWNCLOUD_DB_HOST=owncloud-db
+      - OWNCLOUD_MYSQL_UTF8MB4=true
+      - OWNCLOUD_REDIS_ENABLED=true
+      - OWNCLOUD_REDIS_HOST=owncloud-redis
+    volumes:
+      - cr-owncloud-files:/mnt/data
+
+  owncloud-db:
+    image: webhippie/mariadb:latest
+    restart: unless-stopped
+    networks:
+      services:
+    environment:
+      - MARIADB_ROOT_PASSWORD=owncloud
+      - MARIADB_USERNAME=owncloud
+      - MARIADB_PASSWORD=owncloud
+      - MARIADB_DATABASE=owncloud
+      - MARIADB_MAX_ALLOWED_PACKET=128M
+      - MARIADB_INNODB_LOG_FILE_SIZE=64M
+    volumes:
+      - cr-owncloud-mysql:/var/lib/mysql
+      - cr-owncloud-backup:/var/lib/backup
+
+  owncloud-redis:
+    image: webhippie/redis:latest
+    restart: unless-stopped
+    networks:
+      services:
+    environment:
+      - REDIS_DATABASES=1
+    volumes:
+      - cr-owncloud-redis:/var/lib/redis
+
+  owncloud-nginx:
+    image: nginx
+    restart: unless-stopped
+    networks:
+      services:
+    volumes:
+      - cr-ssl-certs:/SSL:ro
+      - ./webservices/owncloud/config/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "${OWNCLOUD_IP:-180.1.1.100}:443:443"
+    depends_on:
+      cert-bootstrap:
+        condition: service_completed_successfully
+
+  # ── Hastebin (pastebin.com) ─────────────────────────────────
+  hastebin:
+    build:
+      context: ./webservices/pastebin/hastebin
+    restart: unless-stopped
+    networks:
+      services:
+    environment:
+      STORAGE_TYPE: redis
+      STORAGE_HOST: hastebin-redis
+
+  hastebin-redis:
+    image: redis
+    restart: unless-stopped
+    networks:
+      services:
+    volumes:
+      - cr-hastebin-redis:/data
+    entrypoint: redis-server --appendonly yes
+
+  hastebin-nginx:
+    image: nginx
+    restart: unless-stopped
+    networks:
+      services:
+    volumes:
+      - cr-ssl-certs:/SSL:ro
+      - ./webservices/pastebin/config/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "${PASTEBIN_IP:-180.1.1.110}:443:443"
+    depends_on:
+      cert-bootstrap:
+        condition: service_completed_successfully
+
+  # ── Bookstack (redbook.com) ─────────────────────────────────
+  bookstack:
+    image: lscr.io/linuxserver/bookstack:23.10.4
+    restart: unless-stopped
+    networks:
+      services:
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - APP_URL=https://redbook.com
+      - DB_HOST=bookstack-db
+      - DB_PORT=3306
+      - DB_USER=bookstack
+      - DB_PASS=bookstack
+      - DB_DATABASE=bookstackapp
+    volumes:
+      - cr-bookstack-web:/config
+    depends_on:
+      bookstack-db:
+        condition: service_started
+
+  bookstack-db:
+    image: mariadb:10.6
+    restart: unless-stopped
+    networks:
+      services:
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - MYSQL_ROOT_PASSWORD=bookstack
+      - TZ=America/Chicago
+      - MYSQL_DATABASE=bookstackapp
+      - MYSQL_USER=bookstack
+      - MYSQL_PASSWORD=bookstack
+    volumes:
+      - cr-bookstack-db:/config
+
+  bookstack-nginx:
+    image: nginx
+    restart: unless-stopped
+    networks:
+      services:
+    volumes:
+      - cr-ssl-certs:/SSL:ro
+      - ./webservices/redbook/config/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "${BOOKSTACK_IP:-180.1.1.120}:443:443"
+    depends_on:
+      cert-bootstrap:
+        condition: service_completed_successfully
+
+  # ── Draw.io (diagrams.net) ──────────────────────────────────
+  drawio:
+    image: jgraph/drawio
+    restart: unless-stopped
+    networks:
+      services:
+
+  drawio-nginx:
+    image: nginx
+    restart: unless-stopped
+    networks:
+      services:
+    volumes:
+      - cr-ssl-certs:/SSL:ro
+      - ./webservices/drawio/config/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "${DRAWIO_IP:-180.1.1.130}:443:443"
+    depends_on:
+      cert-bootstrap:
+        condition: service_completed_successfully
+
+  # ── NTP ─────────────────────────────────────────────────────
+  ntp:
+    image: cturra/ntp:latest
+    restart: always
+    networks:
+      services:
+    ports:
+      - "${NTP_IP:-180.1.1.140}:123:123/udp"
+    environment:
+      - NTP_SERVERS=${PROXY_IP:-172.30.0.2}
+      - NOCLIENTLOG=true
+
+  # ── Microsoft Sites (msftconnecttest.com) ───────────────────
+  ms-sites:
+    image: nginx
+    restart: unless-stopped
+    networks:
+      services:
+    volumes:
+      - cr-ssl-certs:/SSL:ro
+      - ./webservices/ms_sites/config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./webservices/ms_sites/connecttest.txt:/var/www/html/connecttest.txt:ro
+      - ./webservices/ms_sites/ncsi.txt:/var/www/html/ncsi.txt:ro
+    ports:
+      - "${MSSITES_IP:-180.1.1.150}:80:80"
+      - "${MSSITES_IP:-180.1.1.150}:443:443"
+    depends_on:
+      cert-bootstrap:
+        condition: service_completed_successfully
+
+  # ── NRTS (Red Team Server — on-demand) ───────────────────────
+  nrts:
+    build:
+      context: .
+      dockerfile: docker/nrts/Dockerfile
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    privileged: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data/nrts:/root/services
+    environment:
+      - NRTS_IFACE=${NRTS_IFACE:-ens192}
+      - CA_SERVER=${CA_IP:-180.1.1.50}
+      - CA_PASS=${MASTER_PASSWORD:-toor}
+      - CA_CRT_PATH=/root/ca/intermediate/certs
+      - CA_CERT=int.${CA_DOMAIN:-globalcert.com}.crt.pem
+      - ROOT_DNS=${ROOT_DNS_IP:-198.41.0.4}
+      - ROOT_PASS=${MASTER_PASSWORD:-toor}
+      - RECURSIVE_DNS_IP=${RECURSIVE_DNS_IP:-8.8.8.8}
+      - DEFAULT_DECOY_SITE=${DEFAULT_DECOY_SITE:-redbook.com}
+      - CS_SOCKS_PROXY1=${CS_SOCKS_PROXY1:-1080}
+      - CS_SOCKS_PROXY2=${CS_SOCKS_PROXY2:-2090}
+    profiles:
+      - nrts
+    stdin_open: true
+    tty: true
+
+  # ── Proxy (Squid) ──────────────────────────────────────────
+  proxy:
+    image: ubuntu/squid:latest
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./docker/proxy/squid.conf:/etc/squid/squid.conf:ro
+    environment:
+      - ADMIN_SUBNET=${ADMIN_SUBNET:-172.30.0.0/21}
+      - SERVICES_SUBNET=${SERVICES_SUBNET:-180.1.1.0/24}
+      - PROXY_PORT=${PROXY_PORT:-9999}
+      - RECURSIVE_DNS_IP=${RECURSIVE_DNS_IP:-8.8.8.8}

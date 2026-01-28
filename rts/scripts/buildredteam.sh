@@ -1542,7 +1542,8 @@ DeleteServicesMenu()
            docker kill $srvsel
          fi
          docker rm $srvsel
-         docker network prune --force
+         # Errata #4: targeted network cleanup instead of blanket prune
+         docker network rm "${srvsel}_default" 2>/dev/null || true
          echo -e "\n\t$ltblue Removing IPs $default"
          DeleteIPs $srvsel
          echo -e "\n\t$ltblue Removing config folder $default"
@@ -1564,8 +1565,8 @@ StartServiceMenu()
 {
    docker-compose -f $basesrvpath/$srvsel/docker-compose.yml up -d
    echo -e "\n\t$ltblue Starting $srvel"
-   iptables -F OUTPUT -t nat
-   iptables -F PREROUTING -t nat 
+   # Errata #5: flush only NRTS custom chain, not all NAT rules
+   iptables -t nat -F NRTS_NAT 2>/dev/null || true
    ContainerMenu
 }
 StopServiceMenu()
@@ -2324,8 +2325,8 @@ ExecAndValidate()
     echo -ne "\t$yellow Starting $RDin Docker Container now... $defualt"
     docker-compose -f $basesrvpath/$RDsel/docker-compose.yml up -d &>/dev/null
     echo -e "$green Finished! $default"
-    iptables -F OUTPUT -t nat
-    iptables -F PREROUTING -t nat
+    # Errata #5: flush only NRTS custom chain, not all NAT rules
+    iptables -t nat -F NRTS_NAT 2>/dev/null || true
     exit 0
   fi
   if [[ $changeCDN == 1 ]]; then
@@ -2339,8 +2340,8 @@ ExecAndValidate()
     echo -ne "\t$yellow Starting $CDNsel Docker Container now... $defualt"
     docker-compose -f $basesrvpath/$CDNsel/docker-compose.yml up -d &>/dev/null
     echo -e "$green Finished! $default"
-    iptables -F OUTPUT -t nat
-    iptables -F PREROUTING -t nat
+    # Errata #5: flush only NRTS custom chain, not all NAT rules
+    iptables -t nat -F NRTS_NAT 2>/dev/null || true
     exit 0
   fi
   # Create service path folder and move tmpsrvpath data to it.
@@ -2449,9 +2450,8 @@ ExecAndValidate()
     echo -e "\t Ports $CSTSproxy1  and $CSTSproxy2 $default"
     echo "Sock Proxy Ports enabled are $CSTSproxy1 and $CSTSproxy2" >> $srvpath/ServiceInfo.txt
   fi  
-  # Remove iptable rules that create container isolation
-  iptables -F OUTPUT -t nat
-  iptables -F PREROUTING -t nat
+  # Errata #5: flush only NRTS custom chain, not all NAT rules
+  iptables -t nat -F NRTS_NAT 2>/dev/null || true
 }
 
 # Script execution actually starts here with a call to the MainMenu.
