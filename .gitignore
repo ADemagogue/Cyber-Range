@@ -1,0 +1,27 @@
+# Environment and secrets
+.env
+*.pem
+*.key
+*.p12
+*.jks
+
+# Plan and working documents
+*PLAN*.md
+PLAN.md
+
+# OS and editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Docker runtime
+data/nrts/
+data/ssl/
+
+# Build artifacts
+*.tar.gz
+*.log

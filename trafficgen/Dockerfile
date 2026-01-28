@@ -1,7 +1,8 @@
 FROM ubuntu
 SHELL ["/bin/bash", "-c"]
-ENV http_proxy http://172.30.0.2:9999
-ENV https_proxy http://172.30.0.2:9999
+ARG HTTP_PROXY
+ENV http_proxy=${HTTP_PROXY}
+ENV https_proxy=${HTTP_PROXY}
 RUN debconf-set-selections << "postfix postfix/mailname string traffcgen"
 RUN debconf-set-selections << "postfix postfix/main_mailer_type string 'Internet Site'"
 RUN apt update
