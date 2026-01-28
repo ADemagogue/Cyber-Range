@@ -189,6 +189,7 @@ if [[ $DNS1 != "" ]]; then
 fi
 openssl req -out /root/ca/intermediate/csr/$domain.csr -newkey rsa:2048 -nodes -keyout /root/ca/intermediate/private/$domain.key -config /tmp/san.cnf
 openssl ca -config /root/ca/intermediate/openssl_intermediate.cnf -extensions server_cert -startdate $sdate -enddate $cedate -notext -md sha512 -in /root/ca/intermediate/csr/$domain.csr -out /root/ca/intermediate/certs/$domain.crt -passin pass:password -batch
+# shellcheck disable=SC2090
 openssl pkcs12 -inkey /root/ca/intermediate/private/$domain.key -in /root/ca/intermediate/certs/$domain.crt -export -chain -CAfile /root/ca/intermediate/certs/chain.globalcert.com.crt.pem -out /root/ca/intermediate/certs/$domain.p12 -passout pass:password $addalias
 
 if [[ $codesign == "yes" ]]; then
@@ -216,6 +217,7 @@ subjectKeyIdentifier	= hash
 EOM
   openssl req -out /root/ca/intermediate/csr/cs.$domain.csr -newkey rsa:2048 -nodes -keyout /root/ca/intermediate/private/cs.$domain.key -config /tmp/cs.cnf
   openssl ca -config /root/ca/intermediate/openssl_intermediate.cnf -startdate $sdate -enddate $cedate -notext -md sha512 -in /root/ca/intermediate/csr/cs.$domain.csr -out /root/ca/intermediate/certs/cs.$domain.crt -passin pass:password -batch
+  # shellcheck disable=SC2090
   openssl pkcs12 -inkey /root/ca/intermediate/private/cs.$domain.key -in /root/ca/intermediate/certs/cs.$domain.crt -export -chain -CAfile /root/ca/intermediate/certs/chain.globalcert.com.crt.pem -out /root/ca/intermediate/certs/cs.$domain.p12 -passout pass:password $addalias
 cp /root/ca/intermediate/certs/cs.$domain.p12 /var/www/html
 fi
