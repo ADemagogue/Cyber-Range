@@ -42,8 +42,8 @@ cp /opt/ca-configs/openssl_intermediate.cnf "${CA_DIR}/intermediate/openssl_inte
 sed -i "s/DOMAINNAME/${CA_DOMAIN}/g" "${CA_DIR}/openssl_root.cnf"
 sed -i "s/DOMAINNAME/${CA_DOMAIN}/g" "${CA_DIR}/intermediate/openssl_intermediate.cnf"
 
-# Compute a backdated start time using faketime
-BACKDATE_OFFSET="-${BACKDATE_DAYS}d"
+# Compute a backdated timestamp for faketime (absolute date string)
+BACKDATE_OFFSET="$(date -d "-${BACKDATE_DAYS} days" '+%Y-%m-%d %H:%M:%S')"
 
 echo "[ca] Generating Root CA key..."
 openssl genrsa -aes256 -passout pass:"${CA_PASS}" -out "${CA_DIR}/private/root.key.pem" 4096
