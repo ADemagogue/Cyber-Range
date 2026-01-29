@@ -140,8 +140,8 @@ jobs:
       - name: Build traffic-web image
         run: docker build -f docker/traffic-web/Dockerfile -t cr-traffic-web docker/traffic-web/
 
-      - name: Build trafficgen image (parameterized proxy)
-        run: docker build --build-arg HTTP_PROXY=http://172.30.0.2:9999 -t cr-trafficgen trafficgen/
+      - name: Build trafficgen image (no proxy in CI)
+        run: docker build -t cr-trafficgen trafficgen/
 
   # ── 6. CA PKI integration test (in container) ─────────────
   ca-integration:
