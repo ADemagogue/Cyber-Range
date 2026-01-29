@@ -34,12 +34,6 @@ jobs:
             -not -path './ca/scripts/*' \
             -exec shellcheck --severity=warning {} +
 
-      # Legacy scripts — lint separately with relaxed rules (informational only)
-      - name: Lint legacy scripts (informational)
-        continue-on-error: true
-        run: |
-          shellcheck --severity=error rts/scripts/buildredteam.sh || true
-          shellcheck --severity=error ubuntubuild.sh || true
 
   # ── 2. Validate Dockerfiles ───────────────────────────────
   hadolint:
