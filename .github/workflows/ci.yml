@@ -21,7 +21,6 @@ jobs:
         run: |
           find . -name '*.sh' \
             -not -path './.git/*' \
-            -not -path './rts/scripts/buildredteam.sh' \
             -not -path './ubuntubuild.sh' \
             -not -path './rootdns/scripts/*' \
             -not -path './WebHost/*' \
@@ -29,6 +28,10 @@ jobs:
             -not -path './CA-Server/*' \
             -not -path './Web-Services/*' \
             -not -path './TrafficGen/*' \
+            -not -path './trafficgen/*' \
+            -not -path './webservices/scripts/*' \
+            -not -path './rts/scripts/*' \
+            -not -path './ca/scripts/*' \
             -exec shellcheck --severity=warning {} +
 
       # Legacy scripts — lint separately with relaxed rules (informational only)
