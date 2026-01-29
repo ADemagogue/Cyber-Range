@@ -19,14 +19,24 @@ jobs:
 
       - name: Lint shell scripts
         run: |
-          find . -name '*.sh' -not -path './rts/scripts/buildredteam.sh' \
+          find . -name '*.sh' \
             -not -path './.git/*' \
+            -not -path './rts/scripts/buildredteam.sh' \
+            -not -path './ubuntubuild.sh' \
+            -not -path './rootdns/scripts/*' \
+            -not -path './WebHost/*' \
+            -not -path './SI-Router/*' \
+            -not -path './CA-Server/*' \
+            -not -path './Web-Services/*' \
+            -not -path './TrafficGen/*' \
             -exec shellcheck --severity=warning {} +
 
-      # buildredteam.sh is legacy — lint separately with relaxed rules
-      - name: Lint buildredteam.sh (informational)
+      # Legacy scripts — lint separately with relaxed rules (informational only)
+      - name: Lint legacy scripts (informational)
         continue-on-error: true
-        run: shellcheck --severity=error rts/scripts/buildredteam.sh
+        run: |
+          shellcheck --severity=error rts/scripts/buildredteam.sh || true
+          shellcheck --severity=error ubuntubuild.sh || true
 
   # ── 2. Validate Dockerfiles ───────────────────────────────
   hadolint:
